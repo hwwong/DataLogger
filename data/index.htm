@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" name="viewport" content="width=device-width, height=device-height,  initial-scale=1, user-scalable=no">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dygraph/1.1.1/dygraph-combined.js"></script>
+    <script xmlns="http://www.w3.org/1999/xhtml" async="" src="https://cdn.rawgit.com/eligrey/FileSaver.js/62d219a0fac54b94cd4f230e7bfc55aa3f8dcfa4/FileSaver.js"></script>
+    <link rel="stylesheet" href="http://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.css">
+    <script src="http://code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script src="http://code.jquery.com/mobile/1.4.5/jquery.mobile-1.4.5.min.js"></script>
+
+    <!-- <script type="text/javascript" src="/dygraph-combined.js"></script>
+    <script src="/jquery-1.12.4.min.js"></script>
+    <script src="/jquery.mobile-1.4.5.min.js"></script>
+    <script type="text/javascript" src="/FileSaver.min.js"></script> -->
+
+    <!-- <link rel="stylesheet" href="/jquery.mobile-1.4.5.min.css">
+    <script type="text/javascript" src="/combined.js"></script> -->
+
+    <script>
+        const uiVersion = "1.3";
+        var series = [];
+        var dat = [];
+        var configulation;
+        $(document).ready(function() {
+            $.getJSON("config.txt", function(config) {
+                configulation = config;
+                $.each(config.series, function(key, field) {
+                    series.push(field.name);
+                });
+            }).done(function() {
+                createGraph();
+                loadData();
+            });
+        });
+
+        $(document).ready(function() {
+            $.getJSON("/sysconfig", function(data) {
+                console.log(data);
+                $('#select-sampling').val(data.interval).selectmenu('refresh');
+                $("#intText").text("Sampling:" + data.interval + "ms");
+                var rec = (data.recording == 'on') ? true : false;
+                if (rec)
+                    $("#recordDiv").show();
+                else
+                    $("#recordDiv").hide();
+
+                $("#rec-switch").prop("checked", rec).flipswitch('refresh');
+
+                if (data.diskFull == "true")
+                    $("#fullDiv").show();
+
+
+                bindRecSwitch();
+
+            });
+        });
+
+        function loadData() {
+            $.mobile.loading('show', {
+                text: 'Loading...',
+                textVisible: true,
+                theme: 'z',
+                html: ""
+            });
+            var rawData = new XMLHttpRequest();
+            rawData.open("GET", "/data.bin");
+            rawData.responseType = "arraybuffer";
+            rawData.send();
+
+            rawData.onload = function() {
+                if (rawData.status != 404) {
+                    dat = Raw2Arry(rawData.response, configulation.series);
+                    g2.updateOptions({
+                        'file': dat,
+                        //dateWindow:[timestamp-900000,timestamp+5000]
+                    });
+                }
+                $.mobile.loading("hide");
+                Esp8266_ws();
+            }
+        }
+
+        function createGraph() {
+            g2 = new Dygraph(
+                document.getElementById("graph"),
+                dat, // data array
+                { // options
+                    labels: series,
+                    //labelsDiv: 'SeriesLegend',
+                    //showRangeSelector: true,
+                    legend: 'always',
+                    strokeWidth: 1,
+                    //xlabel: 'Time',
+                    ylabel: 'Temperature &#8451',
+                    y2label: 'Humidity RH%',
+                    animatedZooms: true,
+                    rollPeriod: 10,
+                    //showRoller: true,
+                    xRangePad: 25,
+                    //yRangePad: 100,
+                }
+            );
+        }
+
+        function Esp8266_ws() {
+            var domain = window.location.hostname;
+            //  domain = "192.168.1.230"
+            ws = new WebSocket('ws://' + domain + ':81');
+            ws.onopen = function() {
+                // set the type of binary data messages to ArrayBuffer
+                ws.binaryType = "arraybuffer";
+                // ws.send(binary.buffer);
+
+                // set interval to check WebSocket connection status
+                var wsCheckInterval = setInterval(function() {
+                    //console.log("Heartbeat:" + wsHeartbeat);
+                    if (wsHeartbeat > 0) {
+                        $('#temperature').text("Disconnected!");
+                        clearInterval(chartInterval);
+                        clearInterval(wsCheckInterval);
+                    }
+                    wsHeartbeat++;
+                }, 10000);
+
+            }
+
+            ws.onclose = function() {
+                console.log("WebSocket closed!");
+                $('#temperature').text("Disconnected!");
+            }
+
+            ws.onmessage = function(event) {
+                var timestamp;
+                if (event.data instanceof ArrayBuffer) {
+                    var rows = Raw2Arry(event.data, configulation.series);
+                    //console.log(rows);
+                    wsHeartbeat = 0; //reset websocket check Heartbeat
+
+                    $.each(rows, function(index, value) {
+                        timestamp = value[0].getTime();
+                        if (value[1] < 1200 && value[1] > -200) {
+                            dat.push(value);
+                            $('#temperature').text(value[1].toFixed(1));
+                            $('#temperature').append("<span>°C</span>");
+                        } else {
+                            $('#temperature').text("Probe Error");
+                        }
+                    });
+
+                    //  if (dat.length > 300) {
+                    //    dat.shift();
+                    //  }
+
+                } else {
+
+                    // Recevied websocket Text data
+                    console.log(event.data);
+                    $("#rec-switch").off(); /// unbind the change event to prevent feedback loop
+                    switch (event.data) {
+                        case "rec-on":
+                            $("#rec-switch").prop("checked", true).flipswitch('refresh');
+                            $("#recordDiv").show();
+                            break;
+                        case "rec-off":
+                            $("#rec-switch").prop("checked", false).flipswitch('refresh');
+                            $("#recordDiv").hide();
+                            break;
+                        case "diskFull":
+                            $("#spaceDiv").hide();
+                            $("#fullDiv").show();
+                            break;
+                        case "spaceWarning":
+                            $("#spaceDiv").show();
+                            $("#fullDiv").hide();
+                            break;
+                        case "spaceOK":
+                            $("#spaceDiv").hide();
+                            $("#fullDiv").hide();
+                            break;
+                        default:
+
+                    }
+                    bindRecSwitch(); // rebind the change event
+                }
+            }
+        }
+
+
+        function Raw2Arry(raw, struct) {
+
+            // http://www.esp8266.com/viewtopic.php?f=29&t=5726
+
+            var dv = new DataView(raw);
+            var arr = [];
+            var row = [];
+            var i = 0;
+
+            while (i < dv.byteLength) {
+                $.each(struct, function(key, val) {
+                    switch (val.type) {
+                        case "T":
+                            //row.push(new Date(1000 * (dv.getUint32(i, "littleEndian"))));
+                            //  i += 4
+
+                            var utc = 1000 * (dv.getUint32(i, "littleEndian"))
+                            i += 4
+                            var ms = dv.getUint32(i, "littleEndian") % 1000;
+                            i += 4
+                            row.push(new Date(utc + ms));
+
+
+                            break;
+                        case "I8":
+                            row.push(dv.getInt8(i) / val.DIV);
+                            i += 1;
+                            break;
+                        case "U8":
+                            row.push(dv.getUint8(i) / val.DIV);
+                            i += 1;
+                            break;
+                        case "I16":
+                            row.push(dv.getInt16(i, "littleEndian") / val.DIV);
+                            i += 2;
+                            break;
+                        case "U16":
+                            row.push(dv.getUint16(i, "littleEndian") / val.DIV);
+                            i += 2;
+                            break;
+                        case "U32":
+                            row.push(dv.getUint32(i, "littleEndian") / val.DIV);
+                            i += 4;
+                            break;
+                        case "I32":
+                            row.push(dv.getInt32(i, "littleEndian") / val.DIV);
+                            i += 4;
+                            break;
+                        case "F32":
+                            row.push(dv.getFloat32(i, "littleEndian") / val.DIV);
+                            i += 4;
+                            break;
+                    }
+                });
+
+                arr.push(row);
+                row = [];
+            }
+            return arr;
+        }
+
+        // $(document).ready(function() {
+        //   $("#live-switch").change(function() {
+        //     if ($("#live-switch").val() == "on") {
+        //       g2.resetZoom();
+        //     }
+        //   });
+        // });
+
+        $(document).ready(function() {
+            $("#moveAvg").on('slidestop', function(event) {
+                var mv = $("#moveAvg").val();
+                g2.updateOptions({
+                    'file': dat,
+                    rollPeriod: mv,
+                });
+            });
+        });
+
+
+        function cleanData() {
+
+            dat = [];
+            $.get("/clean", function(response) {
+                if (response != "OK") {
+
+                    alert("Delete failed!")
+                }
+            });
+
+        }
+
+        function synctime() {
+            $.get("/rtc?unixtime=" + (Date.now() / 1000 | 0), function(response) {
+                if (response != "OK") {
+                    console.log("time sync.");
+                }
+            });
+
+
+        }
+
+        function exportCSV(exportAll) {
+            $.mobile.loading('show', {
+                text: 'Prepearing CSV .......',
+                textVisible: true,
+                theme: 'z',
+                html: ""
+            });
+
+            var x1 = g2.xAxisRange()[0];
+            var x2 = g2.xAxisRange()[1];
+            var st = 0;
+            var csv = series.join(",") + "\r\n";
+            csv = csv.replace("Date", "Relative time (sec)")
+            csv = "Timestamp (UTC)," + "Local Date Time," + csv;
+
+            if (exportAll) {
+                st = dat[0][0];
+            } else {
+                for (var i = 0; i < dat.length; i++) {
+                    t = dat[i][0].getTime();
+                    if (t >= x1) {
+                        st = t;
+                        break;
+                    }
+                }
+            }
+
+            for (i = dat.length - 1; i >= 0; i--) {
+                var line = dat[i].slice(0);
+                var csvDate;
+                t = dat[i][0].getTime();
+                if (t <= x2 && t >= x1 || exportAll) {
+                    csvDate = t + ",=\"";
+                    csvDate += dat[i][0].toLocaleDateString() + " ";
+                    csvDate += dat[i][0].getHours() + ":";
+                    csvDate += dat[i][0].getMinutes() + ":";
+                    csvDate += dat[i][0].getSeconds() + ".";
+                    csvDate += dat[i][0].getMilliseconds() + "\",";
+                    csvDate += ((t - st) / 1000).toFixed(3);
+                    line[0] = csvDate;
+                    csv += line.join(",") + "\r\n";
+                }
+            }
+            //    console.log(dat[0][0].toLocaleString());
+            //    console.log(csv);
+            var blob = new Blob([csv], {
+                type: "text/plain;charset=utf-8"
+            });
+            var d = new Date();
+            var n = "logger_" + d.toLocaleDateString() + "_" + d.toLocaleTimeString();
+            saveAs(blob, n + ".csv");
+            $("#nav-panel").panel("close");
+            $.mobile.loading("hide");
+        }
+
+        $(document).ready(function() {
+            $("[name=radio-period]").change(function() {
+                $("#realPeriod").val(1);
+                var rang = $('input[name=radio-period]:checked').val();
+                var max = $('input[name=radio-period]:checked').attr("max");
+                //  alert('Selected: ' + $('input[name=radio-period]:checked');
+                $("#realPeriod").attr("max", max);
+                $("#realPeriod").slider("refresh");
+            });
+        });
+
+        $(document).ready(function() {
+            $("[name=select-sampling]").change(function() {
+                var rate = $('[name=select-sampling]').val();
+                $("#intText").text("Sampling:" + rate + "ms");
+                $.get("/setconfig?interval=" + rate, function(response) {
+                    console.log(response);
+                });
+
+            });
+        });
+
+
+
+        $(document).ready(function() {
+            $("[name=y-axis]").change(function() {
+                var ymax = $("#y-max").val();
+                var ymin = $("#y-min").val();
+                var yRP = (ymax != "") ? null : 25;
+
+                g2.updateOptions({
+                    'file': dat,
+                    valueRange: [ymin, ymax],
+                    yRangePad: yRP,
+                });
+            });
+        });
+
+
+        $(document).ready(function() {
+            $("[name=live-switch]").change(function() {
+                if ($("#live-switch").val() != "on") {
+                    clearInterval(chartInterval);
+                } else {
+                    chartInterval = setInterval(function() {
+                        var x = new Date().getTime(); // current time
+                        var period = $("#realPeriod").val() * 1000 * $('input[name=radio-period]:checked').val();
+                        if (period == 0)
+                            var window = null;
+                        else
+                            var window = [x - period, x + period * 0.01]
+                        g2.updateOptions({
+                            'file': dat,
+                            //  dateWindow: [timestamp - 60000, timestamp + 5000],
+                            dateWindow: window
+                        });
+
+                    }, 100);
+                }
+
+            });
+        });
+
+
+
+        function bindRecSwitch() {
+            $("#rec-switch").change(function() {
+                var rec = ($("#rec-switch").is(':checked')) ? 'on' : 'off';
+                if (rec == 'on')
+                    $("#recordDiv").show();
+                else
+                    $("#recordDiv").hide();
+                $.get("/setconfig?record=" + rec, function(data) {
+                    console.log(data);
+                });
+            });
+        }
+
+        function httpUpdate() {
+            console.log("start http update");
+            $.mobile.loading('show', {
+                text: 'Loading...',
+                textVisible: true,
+                theme: 'z',
+                html: ""
+            });
+
+            $.get("/httpupdate?version=?", function(data) {
+                $("#nav-panel").panel("close");
+                $.mobile.loading("hide");
+                $("#coreVer").html("Current: core ver. = " + data.syscore);
+                $("#coreVer").append("<br\>new: core ver. = " + data.core);
+
+                $("#coreVer").append("<br/><br/>Current: Web UI ver. = " + uiVersion);
+                $("#coreVer").append("<br\>new: Web UI ver. = " + data.ui);
+
+                $("#coreVer").append("<br\>Update Web UI will remove all logger data!!");
+
+                $("#popupUpdate").popup("open");
+                console.log(data);
+            }).fail(function() {
+                $.mobile.loading("hide");
+                $("#popupAlret p").html("Can't connect to WANG's Server");
+                $("#popupAlret").popup("open");
+            });
+        }
+
+
+        function httpCoreUpdate() {
+
+            console.log("start http update");
+            $.mobile.loading('show', {
+                text: 'Updating.....Logger will reboot after 1min',
+                textVisible: true,
+                theme: 'z',
+                html: ""
+            });
+
+            $.get("/httpupdate?core=?", function(data) {
+                console.log(data);
+            });
+
+        }
+
+        function httpSpiffsUpdate() {
+
+            console.log("start spiffs update");
+            $.mobile.loading('show', {
+                text: 'Updating..... it will take appox. 5min. Do not power off the logger!',
+                textVisible: true,
+                theme: 'z',
+                html: ""
+            });
+
+            $.get("/httpupdate?spiffs=?", function(data) {
+                console.log(data);
+            })
+
+        }
+    </script>
+
+    <style>
+        #rate-Div {
+            /*position: absolute;
+            top: -12px;
+            right: 80px;*/
+        }
+
+        #real-Div {
+            position: absolute;
+            top: 0px;
+            right: 10px;
+        }
+
+        #recordDiv {
+            display: none;
+            width: 110px;
+            height: 20px;
+            color: white;
+            border-radius: 15px;
+            position: absolute;
+            vertical-align: middle;
+            text-align: center;
+            background-color: #C70039;
+            top: 12px;
+            left: 50px;
+        }
+
+        #intDiv {
+            color: gray;
+            position: absolute;
+            top: 13px;
+            Right: 100px;
+        }
+
+        .diskDiv {
+            /*display: none;*/
+            width: 120px;
+            height: 20px;
+            border-radius: 15px;
+            position: absolute;
+            vertical-align: middle;
+            text-align: center;
+            top: 12px;
+        }
+
+        #fullDiv {
+            display: none;
+            color: white;
+            background-color: #7D3C98;
+            left: 50px;
+        }
+
+        #spaceDiv {
+            display: none;
+            color: gray;
+            background-color: #FFCC00;
+            left: 180px;
+        }
+
+        #intText {
+            font-size: 13px;
+        }
+
+        #display {
+            /*height: 150px;*/
+        }
+
+        #display-l {
+            height: 150px;
+            line-height: 150px;
+            vertical-align: top;
+            text-align: center;
+        }
+
+        #display-r {
+            padding-left: 20px;
+        }
+
+        #temperature {
+            color: green;
+            display: inline-block;
+            font-size: 100px;
+            vertical-align: top;
+            line-height: 14px;
+        }
+
+        #temperature span {
+            color: gray;
+            font-size: 50px
+        }
+
+        #graph {
+            /*background-color: lightgray;*/
+            position: absolute;
+            left: 15px;
+            top: 200px;
+            right: 15px;
+            /*min-width: 500px;*/
+            bottom: 50px;
+            min-height: 200px;
+            /*right: 15px;
+            bottom: 15px;*/
+        }
+
+        .ui-flipswitch {
+            position: absolute !important;
+            right: 5px !important;
+        }
+
+        #select-sampling-button {
+            position: absolute !important;
+            right: -10px !important;
+            width: 100px
+        }
+
+        .ui-input-text {
+            width: 10px;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div data-role="page">
+        <div data-role="header">
+            <a href="#nav-panel" data-icon="bars" data-iconpos="notext">Menu</a>
+            <div id=recordDiv>
+                <label id=recText>Recording... </label>
+            </div>
+
+            <div id=fullDiv class="diskDiv">
+                <label id=diskText>Disk Full</label>
+            </div>
+
+            <div id=spaceDiv class="diskDiv">
+                <label id=spaceText>Space Warning </label>
+            </div>
+
+
+            <div id=intDiv>
+                <label id=intText>Sampling: 200ms</label>
+            </div>
+
+            <h1>Wireless Logger</h1>
+            <div id=real-Div>
+                <select type="checkbox" name="live-switch" id="live-switch" data-role="flipswitch" data-mini="true" style="position: absolute; right: 0;">
+                    <option value="off">Off</option>
+                    <option value="on">Live</option>
+                </select>
+
+            </div>
+        </div>
+
+
+
+        <div role="main" class="ui-content">
+            <div id="display" class="ui-grid-a">
+                <div id="display-l" class="ui-block-a">
+                    <h1 id="temperature">Connecting....</h1>
+                </div>
+                <div id="display-r" class="ui-block-b">
+
+                </div>
+            </div>
+
+            <!-- <div id="graph" style="width:100%; height:50vh"></div> -->
+            <div id="graph"></div>
+
+        </div>
+
+
+
+        <div data-role="panel" data-position-fixed="true" data-display="reveal" data-theme="b" id="nav-panel">
+
+            <ul data-role="listview">
+
+                <li data-icon="delete"><a href="#" data-rel="close">Close</a></li>
+
+                <li data-role="fieldcontain">
+                    <label for="rec-switch">Recording</label>
+                    <input type="checkbox" id="rec-switch" data-role="flipswitch"></input>
+                </li>
+
+                <li data-role="fieldcontain">
+                    <label for="select-sampling">Sampling:</label>
+                    <select name="select-sampling" id="select-sampling" data-mini="true">
+                        <option value="100">100ms </option>
+                        <option value="150">150ms </option>
+                        <option value="200">200ms </option>
+                        <option value="250">250ms</option>
+                        <option value="500">500ms</option>
+                        <option value="750">750ms</option>
+                        <option value="1000">1.0s</option>
+                        <option value="1500">1.5s</option>
+                        <option value="2000">2.0s</option>
+                        <option value="2500">2.5s</option>
+                        <option value="5000">5.0s</option>
+                        <option value="10000">10s</option>
+                    </select>
+                </li>
+
+                <li data-role="fieldcontain">
+                    <from>
+                        <label for="moveAvg">Moving Average:</label>
+                        <input type="range" name="moveAvg" id="moveAvg" data-highlight="true" data-popup-enabled="true" min="0" max="100" value="10">
+                </li>
+                <li>
+                    <legal>Real Time Period:</legal>
+                    <fieldset data-role="controlgroup" data-type="horizontal" data-mini="true">
+                        <input type="radio" name="radio-period" id="radio-sec" value="1" max="60" checked="checked">
+                        <label for="radio-sec">Sec.</label>
+                        <input type="radio" name="radio-period" id="radio-min" value="60" max="180">
+                        <label for="radio-min">Min.</label>
+                        <input type="radio" name="radio-period" id="radio-hrs" value="3600" max="48">
+                        <label for="radio-hrs">Hrs</label>
+                        <!-- <input type="radio" name="radio-period" id="radio-days" value="86400" max="32">
+                                <label for="radio-days">Days</label> -->
+                        <input type="radio" name="radio-period" id="radio-all" value="0" max="0">
+                        <label for="radio-all">All</label>
+                    </fieldset>
+
+                    <input type="range" name="realPeriod" id="realPeriod" data-highlight="true" data-popup-enabled="true" min="1" max="1000" value="5">
+                    </from>
+                </li>
+                <li>
+                    <legal>Y Axis Limits (blank=auto)</lagel>
+                </li>
+                <li data-role="fieldcontain">
+                    <label for="y-max">max:</label>
+                    <input type="number" data-clear-btn="false" name="y-axis" id="y-max" value="">
+                    <label for="y-min">min:</label>
+                    <input type="number" data-clear-btn="false" name="y-axis" id="y-min" value="">
+                </li>
+
+                <li>
+                    <a href="#popupExport" data-rel="popup" data-position-to="window" data-transition="pop" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-icon-action ui-btn-icon-right ui-btn-b">Export CSV</a>
+                    <div data-role="popup" id="popupExport" data-overlay-theme="b" data-theme="b" data-dismissible="false" style="max-width:400px;">
+                        <div data-role="header" data-theme="a">
+                            <h1>Export CSV</h1>
+                        </div>
+                        <div role="main" class="ui-content">
+                            <h3 class="ui-title">Export data to CSV format</h3>
+                            <p>ios doesn't support export function! </p>
+                            <p>Do you want to export all data or current chart viewport range only?</p>
+                            <a href="#" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back">Cancel</a>
+                            <a href="#" onclick="exportCSV(true)" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back">All</a>
+                            <a href="#" onclick="exportCSV(false)" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back">Viewport</a>
+                        </div>
+                </li>
+                <li>
+
+                    <a href="#popupSync" data-rel="popup" data-position-to="window" data-transition="pop" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-icon-clock ui-btn-icon-right ui-btn-b">Time Sync.</a>
+                    <div data-role="popup" id="popupSync" data-overlay-theme="b" data-theme="b" data-dismissible="false" style="max-width:400px;">
+                        <div data-role="header" data-theme="a">
+                            <h1>Time Synchronization?</h1>
+                        </div>
+                        <div role="main" class="ui-content">
+                            <h3 class="ui-title">To synchronize logger time with computer time?</h3>
+                            <p>This action may collapse the logger data if logger time is faster than your computer time.
+                                <br/>Please export data before time synchronization.</p>
+                            <a href="#" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back">Cancel</a>
+                            <a href="#" onclick="synctime()" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back" data-transition="flow">Yes</a>
+                        </div>
+
+                </li>
+
+
+                <li>
+                    <a href="#popupDelete" data-rel="popup" data-position-to="window" data-transition="pop" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-icon-alert ui-btn-icon-right ui-btn-b">Delete Data</a>
+                    <div data-role="popup" id="popupDelete" data-overlay-theme="b" data-theme="b" data-dismissible="false" style="max-width:400px;">
+                        <div data-role="header" data-theme="a">
+                            <h1>Delete Logger Data?</h1>
+                        </div>
+                        <div role="main" class="ui-content">
+                            <h3 class="ui-title">Are you sure you want to delete all logger data?</h3>
+                            <p>This action cannot be undone.</p>
+                            <a href="#" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back">Cancel</a>
+                            <a href="#" onclick="cleanData()" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back" data-transition="flow">Delete</a>
+                        </div>
+
+                    </div>
+                </li>
+
+                <li>
+                    <a href="#" onclick="httpUpdate()" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-icon-heart ui-btn-icon-right ui-btn-b">System Update</a>
+
+                </li>
+            </ul>
+            </div>
+            <!-- /panel -->
+
+            <div data-role="popup" id="popupUpdate" data-overlay-theme="b" data-theme="b" data-dismissible="false" style="max-width:600px;">
+                <div data-role="header" data-theme="a">
+                    <h1>Online Update</h1>
+                </div>
+                <div role="main" class="ui-content">
+                    <h3 class="ui-title">Update Logger Core/Web Ui?</h3>
+                    <p id="coreVer"> </p>
+
+                    <a href="#" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back">Cancel</a>
+                    <a href="#" onclick="httpCoreUpdate()" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back" data-transition="flow">Update Core</a>
+                    <a href="#" onclick="httpSpiffsUpdate()" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back" data-transition="flow">Update Web UI</a>
+                </div>
+            </div>
+
+
+            <div data-role="popup" id="popupAlret" data-overlay-theme="b" data-theme="b" data-dismissible="false" style="max-width:300px;">
+                <div data-role="header" data-theme="a">
+                    <h1>Online Update</h1>
+                </div>
+                <div role="main" class="ui-content">
+                    <h3 class="ui-title">Update Failed?</h3>
+                    <p> </p>
+                    <a href="#" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-btn-b" data-rel="back">Close</a>
+                </div>
+            </div>
+
+            <!-- <div data-role="footer" data-position="fixed">
+                <h4>Designed by HW Wong</h4>
+            </div> -->
+            <!-- /footer -->
+            </div>
+
+</body>
+
+</html>

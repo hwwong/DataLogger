@@ -1,0 +1,13 @@
+{
+  "series": [{
+    "name": "Date",
+    "type": "T",
+    "unit": ""
+  }, {
+      "name": "Thermocouple",
+    "type": "F32",
+    "unit": "C",
+    "DIV": 1
+  }],
+  "headSize": 10
+}
