@@ -15,6 +15,8 @@
     <script src="/jquery.mobile-1.4.5.min.js"></script>
     <script type="text/javascript" src="/FileSaver.min.js"></script> -->
 
+    <!-- <script src="/interaction.js"></script> -->
+
     <!-- <link rel="stylesheet" href="/jquery.mobile-1.4.5.min.css">
     <script type="text/javascript" src="/combined.js"></script> -->
 
@@ -23,6 +25,7 @@
         var series = [];
         var dat = [];
         var configulation;
+        var lockX_time = 0;
         $(document).ready(function() {
             $.getJSON("config.txt", function(config) {
                 configulation = config;
@@ -100,6 +103,18 @@
                     //showRoller: true,
                     xRangePad: 25,
                     //yRangePad: 100,
+
+
+                    // interactionModel: {
+                    //     'mousedown': downV3,
+                    //     'mousemove': moveV3,
+                    //     'mouseup': upV3,
+                    //     'click': clickV3,
+                    //     'dblclick': dblClickV3,
+                    //     'mousewheel': scrollV3
+                    // },
+
+
                 }
             );
         }
@@ -390,12 +405,27 @@
                     clearInterval(chartInterval);
                 } else {
                     chartInterval = setInterval(function() {
+
+                        var window;
                         var x = new Date().getTime(); // current time
                         var period = $("#realPeriod").val() * 1000 * $('input[name=radio-period]:checked').val();
-                        if (period == 0)
-                            var window = null;
-                        else
-                            var window = [x - period, x + period * 0.01]
+
+                        if (lockX_time != 0) {
+                            if (x - lockX_time > period && period !=0) {
+                                lockX_time = 0;
+                                window = [x - period, x + period * 0.01];
+                            } else if (period == 0) {
+                                window = [lockX_time, x];
+                            } else {
+                                window = [lockX_time, lockX_time + period];
+                            }
+
+                        } else if (period == 0) {
+                            window = null;
+                        } else {
+                            window = [x - period, x + period * 0.01];
+                        }
+
                         g2.updateOptions({
                             'file': dat,
                             //  dateWindow: [timestamp - 60000, timestamp + 5000],
@@ -484,6 +514,25 @@
             })
 
         }
+
+        function lockX() {
+            if (lockX_time == 0)
+                lockX_time = new Date().getTime() - 1000;
+            else
+                lockX_time = 0;
+            console.log(lockX_time);
+        }
+
+        // $(document).ready(function() {
+        //     var lastClickedGraph;
+        //     // TODO(konigsberg): Add cleanup to remove callbacks.
+        //     Dygraph.addEvent(document, "mousewheel", function() {
+        //         lastClickedGraph = null;
+        //     });
+        //     Dygraph.addEvent(document, "click", function() {
+        //         lastClickedGraph = null;
+        //     });
+        // });
     </script>
 
     <style>
@@ -577,6 +626,12 @@
             font-size: 50px
         }
 
+        #keyInfo {
+            position: absolute;
+            top: 120px;
+            right: 5px;
+        }
+
         #graph {
             /*background-color: lightgray;*/
             position: absolute;
@@ -588,6 +643,12 @@
             min-height: 200px;
             /*right: 15px;
             bottom: 15px;*/
+        }
+
+        #butDiv {
+            position: absolute;
+            bottom: 0px;
+            width: 95%;
         }
 
         .ui-flipswitch {
@@ -626,10 +687,12 @@
 
 
             <div id=intDiv>
+
                 <label id=intText>Sampling: 200ms</label>
             </div>
 
             <h1>Wireless Logger</h1>
+
             <div id=real-Div>
                 <select type="checkbox" name="live-switch" id="live-switch" data-role="flipswitch" data-mini="true" style="position: absolute; right: 0;">
                     <option value="off">Off</option>
@@ -637,6 +700,16 @@
                 </select>
 
             </div>
+
+            <div id=keyInfo>
+                <p><a href="#popupInfo" data-rel="popup" data-transition="pop" class="my-tooltip-btn ui-btn ui-alt-icon ui-nodisc-icon ui-btn-inline ui-icon-info ui-btn-icon-notext" title="Mouse info">Key info</a></p>
+            </div>
+            <div data-role="popup" id="popupInfo" class="ui-content" data-theme="a" style="max-width:350px;">
+                <p>Zoom: click-drag
+                    <br/> Pan: shift-click-drag
+                    <br/> Restore: double-click.</p>
+            </div>
+
         </div>
 
 
@@ -652,7 +725,16 @@
             </div>
 
             <!-- <div id="graph" style="width:100%; height:50vh"></div> -->
+
             <div id="graph"></div>
+
+
+            <!-- <div id="butDiv" class="ui-grid-b  ui-bar" data-position="fixed"> -->
+            <div id="butDiv" class="ui-grid-b" data-position-fixed="true">
+                <div class="ui-block-a"><a href="#" onclick="lockX()" class="ui-shadow ui-btn ui-corner-all ui-mini ui-icon-location ui-btn-icon-right">Origin Pin</a></div>
+                <div class="ui-block-b"><a href="#" class="ui-shadow ui-btn ui-corner-all ui-mini">Mode</a></div>
+                <div class="ui-block-c"><a href="#" class="ui-shadow ui-btn ui-corner-all ui-mini">Mode</a></div>
+            </div>
 
         </div>
 
@@ -770,7 +852,7 @@
                 </li>
 
                 <li>
-                    <a href="#" onclick="httpUpdate()" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-icon-heart ui-btn-icon-right ui-btn-b">System Update</a>
+                    <a href="#" onclick="httpUpdate()" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-icon-heart ui-btn-icon-right ui-btn-b">Online Update</a>
 
                 </li>
             </ul>
@@ -807,6 +889,9 @@
                 <h4>Designed by HW Wong</h4>
             </div> -->
             <!-- /footer -->
+
+
+
             </div>
 
 </body>
