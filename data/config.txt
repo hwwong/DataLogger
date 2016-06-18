@@ -5,9 +5,9 @@
     "unit": ""
   }, {
       "name": "Thermocouple",
-    "type": "F32",
+    "type": "I16",
     "unit": "C",
-    "DIV": 1
+    "DIV": 4
   }],
   "headSize": 10
 }

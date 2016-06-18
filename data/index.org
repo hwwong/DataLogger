@@ -42,7 +42,7 @@
             $.getJSON("/sysconfig", function(data) {
                 console.log(data);
                 $('#select-sampling').val(data.interval).selectmenu('refresh');
-                $("#intText").text("Sampling:" + data.interval + "ms");
+                $("#intText").text(data.interval + "ms");
                 var rec = (data.recording == 'on') ? true : false;
                 if (rec)
                     $("#recordDiv").show();
@@ -149,12 +149,14 @@
             ws.onmessage = function(event) {
                 var timestamp;
                 if (event.data instanceof ArrayBuffer) {
+
                     var rows = Raw2Arry(event.data, configulation.series);
                     //console.log(rows);
                     wsHeartbeat = 0; //reset websocket check Heartbeat
 
                     $.each(rows, function(index, value) {
                         timestamp = value[0].getTime();
+
                         if (value[1] < 1200 && value[1] > -200) {
                             dat.push(value);
                             $('#temperature').text(value[1].toFixed(1));
@@ -211,20 +213,22 @@
             var arr = [];
             var row = [];
             var i = 0;
+            // console.log("received");
+            // console.log(dv.byteLength);
 
             while (i < dv.byteLength) {
+                // console.log(dv.getUint32(0 + i * 8, "littleEndian"));
+                // console.log(dv.getUint16(4 + i * 8, "littleEndian"));
+                // console.log(dv.getInt16(6 + i * 8, "littleEndian"));
                 $.each(struct, function(key, val) {
+
                     switch (val.type) {
                         case "T":
-                            //row.push(new Date(1000 * (dv.getUint32(i, "littleEndian"))));
-                            //  i += 4
-
                             var utc = 1000 * (dv.getUint32(i, "littleEndian"))
                             i += 4
-                            var ms = dv.getUint32(i, "littleEndian") % 1000;
-                            i += 4
+                            var ms = dv.getUint16(i, "littleEndian");
+                            i += 2
                             row.push(new Date(utc + ms));
-
 
                             break;
                         case "I8":
@@ -374,7 +378,7 @@
         $(document).ready(function() {
             $("[name=select-sampling]").change(function() {
                 var rate = $('[name=select-sampling]').val();
-                $("#intText").text("Sampling:" + rate + "ms");
+                $("#intText").text(rate + "ms");
                 $.get("/setconfig?interval=" + rate, function(response) {
                     console.log(response);
                 });
@@ -411,7 +415,7 @@
                         var period = $("#realPeriod").val() * 1000 * $('input[name=radio-period]:checked').val();
 
                         if (lockX_time != 0) {
-                            if (x - lockX_time > period && period !=0) {
+                            if (x - lockX_time > period && period != 0) {
                                 lockX_time = 0;
                                 window = [x - period, x + period * 0.01];
                             } else if (period == 0) {
@@ -523,6 +527,11 @@
             console.log(lockX_time);
         }
 
+
+        function resetChart(){
+          g2.resetZoom();
+        }
+
         // $(document).ready(function() {
         //     var lastClickedGraph;
         //     // TODO(konigsberg): Add cleanup to remove callbacks.
@@ -550,7 +559,7 @@
 
         #recordDiv {
             display: none;
-            width: 110px;
+            width: 65px;
             height: 20px;
             color: white;
             border-radius: 15px;
@@ -558,40 +567,39 @@
             vertical-align: middle;
             text-align: center;
             background-color: #C70039;
-            top: 12px;
-            left: 50px;
+            top: 50px;
+            left: 10px;
         }
 
         #intDiv {
             color: gray;
             position: absolute;
-            top: 13px;
-            Right: 100px;
+            top: 45px;
+            Right: 25px;
         }
 
         .diskDiv {
             /*display: none;*/
-            width: 120px;
+            width: 80px;
             height: 20px;
             border-radius: 15px;
             position: absolute;
             vertical-align: middle;
             text-align: center;
-            top: 12px;
+            top: 75px;
+            left: 10px;
         }
 
         #fullDiv {
             display: none;
             color: white;
             background-color: #7D3C98;
-            left: 50px;
         }
 
         #spaceDiv {
             display: none;
             color: gray;
             background-color: #FFCC00;
-            left: 180px;
         }
 
         #intText {
@@ -603,8 +611,8 @@
         }
 
         #display-l {
-            height: 150px;
-            line-height: 150px;
+            height: 100px;
+            line-height: 100px;
             vertical-align: top;
             text-align: center;
         }
@@ -614,9 +622,12 @@
         }
 
         #temperature {
+            position: absolute;
+            top: 40px;
+            left: 120px;
             color: green;
             display: inline-block;
-            font-size: 100px;
+            font-size: 80px;
             vertical-align: top;
             line-height: 14px;
         }
@@ -628,19 +639,19 @@
 
         #keyInfo {
             position: absolute;
-            top: 120px;
+            top: 80px;
             right: 5px;
         }
 
         #graph {
             /*background-color: lightgray;*/
             position: absolute;
-            left: 15px;
-            top: 200px;
-            right: 15px;
+            left: 0px;
+            top: 150px;
+            right: 20px;
             /*min-width: 500px;*/
             bottom: 50px;
-            min-height: 200px;
+            /*min-height: 200px;*/
             /*right: 15px;
             bottom: 15px;*/
         }
@@ -674,7 +685,7 @@
         <div data-role="header">
             <a href="#nav-panel" data-icon="bars" data-iconpos="notext">Menu</a>
             <div id=recordDiv>
-                <label id=recText>Recording... </label>
+                <label id=recText>Rec... </label>
             </div>
 
             <div id=fullDiv class="diskDiv">
@@ -682,13 +693,13 @@
             </div>
 
             <div id=spaceDiv class="diskDiv">
-                <label id=spaceText>Space Warning </label>
+                <label id=spaceText>Disk Low</label>
             </div>
 
 
             <div id=intDiv>
 
-                <label id=intText>Sampling: 200ms</label>
+                <label id=intText>200ms</label>
             </div>
 
             <h1>Wireless Logger</h1>
@@ -732,7 +743,7 @@
             <!-- <div id="butDiv" class="ui-grid-b  ui-bar" data-position="fixed"> -->
             <div id="butDiv" class="ui-grid-b" data-position-fixed="true">
                 <div class="ui-block-a"><a href="#" onclick="lockX()" class="ui-shadow ui-btn ui-corner-all ui-mini ui-icon-location ui-btn-icon-right">Origin Pin</a></div>
-                <div class="ui-block-b"><a href="#" class="ui-shadow ui-btn ui-corner-all ui-mini">Mode</a></div>
+                <div class="ui-block-b"><a href="#" onclick="resetChart()" class="ui-shadow ui-btn ui-corner-all ui-mini">Reset Chart</a></div>
                 <div class="ui-block-c"><a href="#" class="ui-shadow ui-btn ui-corner-all ui-mini">Mode</a></div>
             </div>
 
@@ -743,7 +754,6 @@
         <div data-role="panel" data-position-fixed="true" data-display="reveal" data-theme="b" id="nav-panel">
 
             <ul data-role="listview">
-
                 <li data-icon="delete"><a href="#" data-rel="close">Close</a></li>
 
                 <li data-role="fieldcontain">
