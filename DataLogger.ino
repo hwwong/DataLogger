@@ -59,13 +59,15 @@
 #define DHTPIN 0    // what digital pin we're connected to
 #define DHTTYPE DHT11   // DHT 11
 
-// Http update host
-
-
-
-// #define MAX6675_CS_PIN 2
 #define MAX31855_CS_PIN     2
 
+#define LOGGER_STRUCT_SIZE 8
+
+struct logger_struct {
+  uint32_t timestamp;
+  uint16_t mSec;
+  int16_t MAX31855;
+};
 
 // the struct much be 4, 8,  12.... byte for file writting.
 //struct logger_struct {
@@ -76,6 +78,18 @@
 //  float MAX6675;
 //};
 
+//typedef union {
+//  uint32_t regValue;
+//  struct {
+//    unsigned temperature : 14;
+//    unsigned reserved1 : 1;
+//    unsigned fault : 1;
+//    unsigned internalTemperature : 12;
+//    unsigned reserved2 : 1;
+//    unsigned faultMode: 3;
+//  };
+//} MAX31855_REG;
+
 struct systemConfig {
   uint32_t samplingInterval = 1000;
   uint8_t logDataON = 0;
@@ -83,21 +97,15 @@ struct systemConfig {
 };
 
 
-struct logger_struct {
-  uint32_t timestamp;
-  uint32_t mSec;
-  //  int16_t DHT12_temp;
-  //  uint16_t DHT12_hum;
-  //  float MAX6675;
-  float MAX31855;
-};
-
 
 uint8_t wsConnection = 0;
 
 ADC_MODE(ADC_VCC);
 //MAX6675 thermocouple(MAX6675_CS_PIN);
-Adafruit_MAX31855 thermocouple(MAX31855_CS_PIN);
+//Adafruit_MAX31855 thermocouple(MAX31855_CS_PIN);
+
+
+
 
 
 DHT12_I2C dht12;
@@ -109,11 +117,11 @@ OneButton selectKey(SELECT_KEY, true);
 OneButton startKey(START_KEY, true);
 
 const char* updatehost = "pchunter.synology.me";
-const char* ssid = "HW";
-const char* password = "pchunter";
+const char* ssid = "xx";
+const char* password = "xx";
 const char* host = "logger";
 const uint32_t interval = 1000;     // Sampling interval
-const uint8_t LOG_BUFF_SIZE = 8;
+const uint8_t LOG_BUFF_SIZE = 10;
 const size_t DATA_FILE_SIZE = 1500000;
 const size_t DATA_FILE_WARNING_SIZE = 1400000;
 // 8,
@@ -141,6 +149,8 @@ File fsUploadFile;
 
 void setup(void) {
 
+  max31855Setup();
+
   DBG_OUTPUT_PORT.begin(115200);
   DBG_OUTPUT_PORT.print("\n");
   DBG_OUTPUT_PORT.setDebugOutput(true);
@@ -164,25 +174,9 @@ void setup(void) {
   }
 
 
-  rtc.begin();
 
-  if (! rtc.isrunning()) {
-    Serial.println("RTC is NOT running!");
-    // following line sets the RTC to the date & time this sketch was compiled
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    // This line sets the RTC with an explicit date & time, for example to set
-    // January 21, 2014 at 3am you would call:
-    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
-  }
 
-  rtc.writeSqwPinMode(ON);
 
-  static uint32_t sysTime = millis();
-  startTime = rtc.now().unixtime() - millis() / 1000;
-
-  //  dht12.begin();
-
-  // pinMode(START_KEY, INPUT);
   pinMode(SELECT_KEY, INPUT);
   pinMode(START_KEY, INPUT);
 
@@ -215,7 +209,6 @@ void setup(void) {
   //  }
 
 
-
   uint8_t count = 3;
   while (!count) {
     if (WiFi.status() == WL_CONNECTED)
@@ -225,11 +218,28 @@ void setup(void) {
     count--;
   }
 
+  rtc.begin();
+  rtc.writeSqwPinMode(ON);
 
-  //  static uint32_t sysTime = millis();
-  //uint32_t ntpTime = getNtpTime() - millis() / 1000;
-  //if (ntpTime != 0)
-  //  startTime  = ntpTime;
+  if (! rtc.isrunning()) {
+    Serial.println("RTC is NOT running!");
+    // following line sets the RTC to the date & time this sketch was compiled
+    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    // This line sets the RTC with an explicit date & time, for example to set
+    // January 21, 2014 at 3am you would call:
+    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
+
+
+    startTime  = getNtpTime() - millis() / 1000;
+
+
+  } else {
+    startTime = rtc.now().unixtime() - millis() / 1000;
+  }
+
+
+
+
 
   //  DBG_OUTPUT_PORT.println("");
   //  DBG_OUTPUT_PORT.print("Connected! IP address: ");
@@ -295,7 +305,7 @@ void setup(void) {
   // Get system data
   server.on("/sysinfo", HTTP_GET, sysinfo );
 
-  
+
 
 
   httpUpdater.setup(&server);
@@ -311,10 +321,7 @@ void setup(void) {
 
   MDNS.addService("http", "tcp", 80);
 
-  dht12.begin();
-  //Wire.setClock(400000L);
 
-  //
   //  pinMode(13, OUTPUT);
   //  pinMode(15 , OUTPUT);
   //  pinMode(0, OUTPUT);
@@ -326,7 +333,8 @@ void setup(void) {
   selectKey.attachLongPressStart(selectLongPress);
   startKey.attachLongPressStart(startLongPress);
 
-  SPI.setFrequency(4500000);
+
+
   delay(1000); //delay 3s for Sensor stability
 
   digitalWrite(LED1, HIGH);
@@ -367,20 +375,23 @@ void loop(void) {
 
     uint32_t m = millis();
     logData.timestamp = startTime + m / 1000;
-    logData.mSec = m;
+    logData.mSec = m % 1000;
 
     // dht12.read(logData.DHT12_temp, logData.DHT12_hum);
     // logData.MAX6675 = thermocouple.readC();
 
-    float tc_temp = thermocouple.readCelsius();
+    //float tc_temp = thermocouple.readCelsius();
 
-    if (probeError && !isnan(tc_temp)) {
+
+    int16_t tc_temp = max31855_read();
+
+    if (probeError &&  (0xffffffff == tc_temp) ) {
       delay(500);
-      tc_temp = thermocouple.readCelsius();
+      tc_temp = max31855_read();
       probeError = false;
     }
 
-    if (!isnan(tc_temp)) {
+    if ( (0xffffffff != tc_temp) ) {
       logData.MAX31855 = tc_temp;
       if (sysConfig.logDataON && !recordStop ) {
         LogDataBuff[buffCount] = logData;
@@ -389,20 +400,23 @@ void loop(void) {
           buffCount = 0;
           File binfile = SPIFFS.open("/data.bin", "a+");
           if (binfile) {
-            binfile.write((uint8_t *)&LogDataBuff, sizeof(LogDataBuff));
+            binfile.write((uint8_t *)&LogDataBuff, LOGGER_STRUCT_SIZE * LOG_BUFF_SIZE);
             // binfile.close();
           }
         }
+
       }
 
     } else {
       //if reading thermocouple error send higher error value for javascript handle
-      logData.MAX31855 = 2000;
+      logData.MAX31855 = 5000;
       probeError = true;
     }
 
     if (wsConnection != 0)
-      webSocket.broadcastBIN((uint8_t *)&logData, sizeof(logData));
+
+      webSocket.broadcastBIN((uint8_t *)&logData, LOGGER_STRUCT_SIZE);
+
     else {
       // check wifi status turn on led
       if (WiFi.status() == WL_CONNECTED)
@@ -436,10 +450,10 @@ void checkSystemStatus( ) {
 
   File f = SPIFFS.open("/data.bin", "r");
   String  s = String(f.size());
-  
+
   webSocket.broadcastTXT(s);
   if (f.size() > DATA_FILE_SIZE   ) {
-  webSocket.broadcastTXT("diskFull");
+    webSocket.broadcastTXT("diskFull");
     LED1_Blink_Speed = 0x1; //alway on
     sysConfig.logDataON = 0  ;
     sysConfig.diskFull = 1;
@@ -447,8 +461,8 @@ void checkSystemStatus( ) {
     saveSysConfig();
   }
   else if (f.size() > DATA_FILE_WARNING_SIZE) {
-  LED1_Blink_Speed = 0x40; //fast blanking
-  webSocket.broadcastTXT("spaceWarning");
+    LED1_Blink_Speed = 0x40; //fast blanking
+    webSocket.broadcastTXT("spaceWarning");
   } else {
     LED1_Blink_Speed = 0x300; //slow blanking
     webSocket.broadcastTXT("spaceOK");
