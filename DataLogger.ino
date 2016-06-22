@@ -1,4 +1,4 @@
-/*
+  /*
   FSWebServer - Example WebServer with SPIFFS backend for esp8266
   Copyright (c) 2015 Hristo Gochkov. All rights reserved.
   This file is part of the ESP8266WebServer library for Arduino environment.

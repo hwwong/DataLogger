@@ -4,7 +4,7 @@
     "type": "T",
     "unit": ""
   }, {
-      "name": "Thermocouple",
+      "name": "CH01",
     "type": "I16",
     "unit": "C",
     "DIV": 4

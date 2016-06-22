@@ -170,7 +170,8 @@ void httpUpdate() {
     }
     int firstJson = line.indexOf("{");
 
-    line.replace("}", ",\"syscore\":\"" + String( F(__DATE__))  + " " +  String( F(__TIME__) ) + "\"}");
+   line.replace("}", ",\"syscore\":\"" + String( F(__DATE__))  + " " +  String( F(__TIME__) ) + "\"}");
+
 
     line = line.substring(firstJson);
 
