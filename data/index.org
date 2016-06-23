@@ -896,7 +896,10 @@
 
                 <li>
                     <a href="#" onclick="httpUpdate()" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-icon-heart ui-btn-icon-right ui-btn-b">Online Update</a>
+                </li>
 
+                <li>
+                    <a href="/about.htm"  target="_blank" class="ui-btn ui-corner-all ui-shadow ui-btn-inline ui-icon-info ui-btn-icon-right ui-btn-b">About</a>
                 </li>
             </ul>
             </div>

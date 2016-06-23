@@ -150,33 +150,10 @@ File fsUploadFile;
 void setup(void) {
 
   max31855Setup();
-
-  DBG_OUTPUT_PORT.begin(115200);
-  DBG_OUTPUT_PORT.print("\n");
-  DBG_OUTPUT_PORT.setDebugOutput(true);
-  SPIFFS.begin();
-  {
-    Dir dir = SPIFFS.openDir("/");
-    while (dir.next()) {
-      String fileName = dir.fileName();
-      size_t fileSize = dir.fileSize();
-      DBG_OUTPUT_PORT.printf("FS File: %s, size: %s\n", fileName.c_str(), formatBytes(fileSize).c_str());
-    }
-    DBG_OUTPUT_PORT.printf("\n");
-  }
-
-
-  // load system config value
-  File sys = SPIFFS.open("/config.sys", "r");
-  if (sys) {
-    sys.readBytes((char*) &sysConfig, sizeof(sysConfig));
-    sys.close();
-  }
-
-
-
-
-
+  
+  rtc.begin();
+  rtc.writeSqwPinMode(ON);
+  
   pinMode(SELECT_KEY, INPUT);
   pinMode(START_KEY, INPUT);
 
@@ -208,6 +185,33 @@ void setup(void) {
   //    WiFi.begin(ssid, password);
   //  }
 
+  DBG_OUTPUT_PORT.begin(115200);
+  DBG_OUTPUT_PORT.print("\n");
+  DBG_OUTPUT_PORT.setDebugOutput(true);
+  SPIFFS.begin();
+  {
+    Dir dir = SPIFFS.openDir("/");
+    while (dir.next()) {
+      String fileName = dir.fileName();
+      size_t fileSize = dir.fileSize();
+      DBG_OUTPUT_PORT.printf("FS File: %s, size: %s\n", fileName.c_str(), formatBytes(fileSize).c_str());
+    }
+    DBG_OUTPUT_PORT.printf("\n");
+  }
+
+
+  // load system config value
+  File sys = SPIFFS.open("/config.sys", "r");
+  if (sys) {
+    sys.readBytes((char*) &sysConfig, sizeof(sysConfig));
+    sys.close();
+  }
+
+
+
+
+  
+
 
   uint8_t count = 3;
   while (!count) {
@@ -218,8 +222,7 @@ void setup(void) {
     count--;
   }
 
-  rtc.begin();
-  rtc.writeSqwPinMode(ON);
+
 
   if (! rtc.isrunning()) {
     Serial.println("RTC is NOT running!");
